@@ -2,8 +2,9 @@ import torch
 from transformers import AutoModelForCausalLM
 from dotenv import load_dotenv
 import os
-from enum import StrEnum
+from enum import Enum
 from utils import user_mask_function, assistant_mask_function
+import torch.nn.functional as F
 
 load_dotenv()
 
@@ -11,10 +12,10 @@ MODEL_LLAMA_3_CHAT = "meta-llama/Meta-Llama-3.1-8B-Instruct"
 HUGGINGFACE_TOKEN = os.getenv("HF_TOKEN")
 
 
-class Intervention(StrEnum):
-    EMBEDDING_COLOR = "embedding_color"
-    RESID_ADD_PROJECT = "resid_add_project"
-    STEER_AT_LAYER = "steer_at_layer"
+class Intervention(Enum):
+    EMBEDDING_COLOR = 1
+    RESID_ADD_PROJECT = 2
+    STEER_AT_LAYER = 3
 
 
 class InterventionSettings:
@@ -68,7 +69,10 @@ class ModelWrapper(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.model = AutoModelForCausalLM.from_pretrained(
-            MODEL_LLAMA_3_CHAT, token=HUGGINGFACE_TOKEN
+            MODEL_LLAMA_3_CHAT,
+            token=HUGGINGFACE_TOKEN,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
         )
         self.hooks = []
 
@@ -86,13 +90,16 @@ class ModelWrapper(torch.nn.Module):
 
         self.hooks.append(self.model.register_forward_hook(main_hook_fn))
 
+        user_vector = settings.user_vector.to(self.device).to(torch.bfloat16)
+        assistant_vector = settings.assistant_vector.to(self.device).to(torch.bfloat16)
+
         # set up hooks based on intervention type
         if settings.intervention == Intervention.EMBEDDING_COLOR:
             self.hooks.append(
                 register_hook_to_add_and_proj_to_token_repr(
                     self.model.model.embed_tokens,
                     "user_mask",
-                    settings.user_vector,
+                    user_vector,
                     None,
                 )
             )
@@ -100,7 +107,7 @@ class ModelWrapper(torch.nn.Module):
                 register_hook_to_add_and_proj_to_token_repr(
                     self.model.model.embed_tokens,
                     "assistant_mask",
-                    settings.assistant_vector,
+                    assistant_vector,
                     None,
                 )
             )
@@ -110,16 +117,16 @@ class ModelWrapper(torch.nn.Module):
                     register_hook_to_add_and_proj_to_token_repr(
                         block,
                         "user_mask",
-                        settings.user_vector,
-                        settings.assistant_vector,
+                        user_vector,
+                        assistant_vector,
                     )
                 )
                 self.hooks.append(
                     register_hook_to_add_and_proj_to_token_repr(
                         block,
                         "assistant_mask",
-                        settings.assistant_vector,
-                        settings.user_vector,
+                        assistant_vector,
+                        user_vector,
                     )
                 )
         elif settings.intervention == Intervention.STEER_AT_LAYER:
@@ -129,7 +136,7 @@ class ModelWrapper(torch.nn.Module):
                         register_hook_to_add_and_proj_to_token_repr(
                             block,
                             "user_mask",
-                            settings.user_vector,
+                            user_vector,
                             None,
                         )
                     )
@@ -137,7 +144,7 @@ class ModelWrapper(torch.nn.Module):
                         register_hook_to_add_and_proj_to_token_repr(
                             block,
                             "assistant_mask",
-                            settings.assistant_vector,
+                            assistant_vector,
                             None,
                         )
                     )
@@ -150,3 +157,18 @@ class ModelWrapper(torch.nn.Module):
 
     def generate(self, *args, **kwargs):
         self.model.generate(*args, **kwargs)
+
+    @property
+    def device(self):
+        return self.model.device
+
+    def get_per_token_nlls(self, tokens):
+        tokens = tokens.to(self.device)
+        with torch.no_grad():
+            outputs = self.model(tokens, return_dict=True)
+            logits = outputs.logits[:, :-1, :]  # Remove last position from logits
+            labels = tokens[:, 1:]  # Remove first position from labels
+            nlls = F.cross_entropy(
+                logits.view(-1, logits.size(-1)), labels.view(-1), reduction="none"
+            )
+        return nlls.view(tokens.size(0), -1)  # Reshape to [batch_size, seq_len-1]
