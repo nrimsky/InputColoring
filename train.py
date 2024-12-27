@@ -1,5 +1,5 @@
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import json
 import random
 from tqdm import tqdm
@@ -17,8 +17,7 @@ class TrainingConfig:
     val_files: list[str]
     intervention_settings: InterventionSettings
     learning_rate: float = 1e-5
-    batch_size: int = 1
-    num_epochs: int = 3
+    num_epochs: int = 1
     use_lora: bool = False
     lora_r: int = 8
     lora_alpha: int = 32
@@ -49,7 +48,6 @@ def compute_masked_loss(logits: torch.Tensor, labels: torch.Tensor, mask: torch.
     # logits: [batch_size, seq_len-1, vocab_size]
     # labels: [batch_size, seq_len-1]
     # mask: [batch_size, seq_len-1]
-    
     loss = F.cross_entropy(logits.view(-1, logits.size(-1)), 
                           labels.view(-1), 
                           reduction='none')
@@ -76,7 +74,7 @@ def evaluate_model(model: ModelWrapper, val_files: list[str], n_samples: int) ->
                 outputs = model(tokens, return_dict=True)
                 logits = outputs.logits[:, :-1, :]
                 labels = tokens[:, 1:]
-                loss = compute_masked_loss(logits, labels, mask[1:])
+                loss = compute_masked_loss(logits, labels, mask[:, 1:])
                 total_loss += loss.item()
         
         avg_loss = total_loss / len(val_samples)
@@ -91,9 +89,15 @@ def print_and_log(string, filename):
         f.write(string + "\n")
 
 def train_model(model: ModelWrapper, config: TrainingConfig):
-    save_dir = f"saved_models/{str(config.intervention_settings.intervention)}"
+    save_dir = f"saved_models/{str(config.intervention_settings)}"
     logfile = f"{save_dir}/training_log.txt"
     os.makedirs(save_dir, exist_ok=True)
+    # delete log file if it already exists
+    if os.path.exists(logfile):
+        os.remove(logfile)
+    train_dataset = ConversationDataset(config.train_files)
+    print(f"Training on {len(train_dataset)} samples")
+
     model.set_intervention(config.intervention_settings)
     if config.use_lora:
         peft_config = LoraConfig(
@@ -107,54 +111,45 @@ def train_model(model: ModelWrapper, config: TrainingConfig):
         model.model = get_peft_model(model.model, peft_config)
         model.model.print_trainable_parameters()
     
-    train_dataset = ConversationDataset(config.train_files)
-    train_dataloader = DataLoader(
-        train_dataset,
-        batch_size=config.batch_size,
-        shuffle=True
-    )
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
     
-    total_steps = len(train_dataloader) * config.num_epochs
+    total_steps = len(train_dataset) * config.num_epochs
     val_check_steps = int(total_steps * config.val_check_interval)
     
     global_step = 0
+    train_loss = 0.0
+    n = 0
     model.train()
     
     for epoch in range(config.num_epochs):
         print_and_log(f"\nEpoch {epoch + 1}/{config.num_epochs}", logfile)
-        epoch_loss = 0.0
-        
-        for batch in tqdm(train_dataloader, desc="Training"):
-            tokens = batch['tokens'].to(model.device)
-            mask = batch['assistant_mask'].to(model.device)
-            
+        progress_bar = tqdm(train_dataset, desc=f"Epoch {epoch + 1}")
+        for row in progress_bar:
+            tokens = row['tokens'].to(model.device)
+            mask = row['assistant_mask'].to(model.device)
             outputs = model(tokens, return_dict=True)
             logits = outputs.logits[:, :-1, :]  # Remove last position
             labels = tokens[:, 1:]  # Remove first position
-            
             loss = compute_masked_loss(logits, labels, mask[:, 1:])
-            
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
-            
-            epoch_loss += loss.item()
+            progress_bar.set_postfix({'loss': f'{loss.item():.4f}'})
+            train_loss += loss.item()
             global_step += 1
-            
-            # Check if it's time for validation
+            n += 1
             if global_step % val_check_steps == 0:
                 val_results = evaluate_model(
                     model,
                     config.val_files,
                     config.validation_samples
                 )
-                print_and_log("\nValidation Results:", logfile)
+                print_and_log(f"Avg train loss over last {n} steps: {train_loss/n:.4f}", logfile)
+                print_and_log("Validation results:", logfile)
                 for file_name, val_loss in val_results.items():
                     print_and_log(f"{file_name}: {val_loss:.4f}", logfile)
-        
-        avg_epoch_loss = epoch_loss / len(train_dataloader)
-        print_and_log(f"Average training loss for epoch: {avg_epoch_loss:.4f}", logfile)
+                train_loss = 0.0
+                n = 0
 
     if config.use_lora:
         model.model.save_pretrained(save_dir)
