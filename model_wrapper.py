@@ -27,6 +27,15 @@ class InterventionSettings:
             assert "layer" in kwargs, "need layer for STEER_AT_LAYER"
             self.layer = kwargs["layer"]
 
+    def __str__(self):
+        int_name = self.intervention.value
+        if hasattr(self, "layer"):
+            int_name += f"_{self.layer}"
+        return int_name
+    
+    def __repr__(self):
+        return str(self)
+
 def register_hook_to_add_and_proj_to_token_repr(
     module: torch.nn.Module,
     mask_attr: str,
