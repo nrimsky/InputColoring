@@ -41,6 +41,14 @@ class InterventionSettings:
     def __repr__(self):
         return str(self)
 
+    def to_dict(self):
+        return {
+            "intervention": self.intervention.value,
+            "user_vector": self.user_vector.tolist(),
+            "assistant_vector": self.assistant_vector.tolist(),
+            "layer": getattr(self, "layer", None),
+        }
+
 def register_hook_to_add_and_proj_to_token_repr(
     module: torch.nn.Module,
     mask_attr: str,

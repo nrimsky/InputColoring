@@ -25,6 +25,21 @@ class TrainingConfig:
     validation_samples: int = 30
     val_check_interval: float = 0.1
 
+    def to_dict(self):
+        return {
+            'train_files': self.train_files,
+            'val_files': self.val_files,
+            'intervention_settings': self.intervention_settings.to_dict() if self.intervention_settings is not None else None,
+            'learning_rate': self.learning_rate,
+            'num_epochs': self.num_epochs,
+            'use_lora': self.use_lora,
+            'lora_r': self.lora_r,
+            'lora_alpha': self.lora_alpha,
+            'lora_dropout': self.lora_dropout,
+            'validation_samples': self.validation_samples,
+            'val_check_interval': self.val_check_interval
+        }
+
 class ConversationDataset(Dataset):
     def __init__(self, file_paths: list[str]):
         self.examples = []
@@ -95,6 +110,9 @@ def train_model(model: ModelWrapper, config: TrainingConfig):
     # delete log file if it already exists
     if os.path.exists(logfile):
         os.remove(logfile)
+    # save config
+    with open(f"{save_dir}/training_config.json", "w") as f:
+        json.dump(config.to_dict(), f)
     train_dataset = ConversationDataset(config.train_files)
     print(f"Training on {len(train_dataset)} samples")
 
