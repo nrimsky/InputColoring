@@ -13,6 +13,9 @@ from datasets import load_dataset
 
 USER_ID = 882
 ASSISTANT_ID = 78191
+START_HEADER_ID = 128006
+END_HEADER_ID = 128007
+SPECIAL_ZONE_START = 128000
 
 
 def remove_system_prompt(text):
@@ -30,14 +33,18 @@ def format_conversation(conversation, tokenizer, add_generation_prompt=False):
 def get_mask(
     tokens,
     target_role_token,
-    start_header_token=128006,
-    end_header_token=128007,
+    start_header_token=START_HEADER_ID,
+    end_header_token=END_HEADER_ID,
     apply_in_generate_mode=False,
 ):
     assert len(tokens.shape) == 2
     batch_size, seq_len = tokens.shape
-    if apply_in_generate_mode and seq_len == 1:
-        return torch.ones_like(tokens)
+    if seq_len == 1:
+        # we are generating token by token
+        if apply_in_generate_mode:
+            return torch.ones_like(tokens)
+        else:
+            return torch.zeros_like(tokens)
     mask = torch.zeros_like(tokens)
     for i in range(batch_size):
         seq = tokens[i]

@@ -3,7 +3,7 @@ from transformers import AutoModelForCausalLM
 from dotenv import load_dotenv
 import os
 from enum import Enum
-from utils import user_mask_function, assistant_mask_function
+from utils import SPECIAL_ZONE_START, user_mask_function, assistant_mask_function, START_HEADER_ID, END_HEADER_ID, ASSISTANT_ID, USER_ID
 import torch.nn.functional as F
 
 load_dotenv()
@@ -41,6 +41,7 @@ def register_hook_to_add_and_proj_to_token_repr(
 
         model_ref = module.model_ref
         mask = getattr(model_ref, mask_attr).unsqueeze(-1)  # b s 1
+        # print(mask_attr, mask.sum().item())
         expanded_vector = vector.unsqueeze(0).unsqueeze(0)  # 1 1 r
         acts += mask * expanded_vector  # b s r
         if proj_vector is not None:
@@ -59,9 +60,22 @@ def register_hook_to_add_and_proj_to_token_repr(
     return handle
 
 
-def main_hook_fn(module, input, output):
-    module.user_mask = user_mask_function(input[0])
-    module.assistant_mask = assistant_mask_function(input[0])
+def main_hook_fn(module, inputs):
+    # Typically for embed_tokens, inputs[0] should be the input_ids tensor.
+    # But depending on HF version, it could be a dictionary.
+    if isinstance(inputs[0], dict):
+        # If it's a dict, we want the "input_ids" key
+        input_ids = inputs[0].get("input_ids", None)
+    else:
+        # If it's not a dict, we assume it's the raw tensor
+        input_ids = inputs[0]
+
+    module.model_ref.user_mask = user_mask_function(input_ids)
+    module.model_ref.assistant_mask = assistant_mask_function(input_ids)
+
+    # Return the same set of inputs so the forward continues
+    return inputs
+
 
 
 class ModelWrapper(torch.nn.Module):
@@ -84,11 +98,15 @@ class ModelWrapper(torch.nn.Module):
     def reset_hooks(self):
         for handle in self.hooks:
             handle.remove()
+        self.hooks = []
 
     def set_intervention(self, settings: InterventionSettings):
         self.reset_hooks()
 
-        self.hooks.append(self.model.register_forward_hook(main_hook_fn))
+        self.hooks.append(
+            self.model.model.embed_tokens.register_forward_pre_hook(main_hook_fn)
+        )
+
 
         user_vector = settings.user_vector.to(self.device).to(torch.bfloat16)
         assistant_vector = settings.assistant_vector.to(self.device).to(torch.bfloat16)
@@ -153,16 +171,27 @@ class ModelWrapper(torch.nn.Module):
         return self.model(*args, **kwargs)
 
     def forward(self, *args, **kwargs):
-        self.model.forward(*args, **kwargs)
+        return self.model.forward(*args, **kwargs)
 
     def generate(self, *args, **kwargs):
-        self.model.generate(*args, **kwargs)
+        return self.model.generate(*args, **kwargs)
+    
+    def sample(self, tokens: torch.Tensor, max_n_tokens: int) -> torch.Tensor:
+        attention_mask = torch.ones_like(tokens)
+        return self.model.generate(
+            tokens,
+            max_length=max_n_tokens,
+            attention_mask=attention_mask,
+            do_sample=False,
+            temperature=None,
+            top_p=None,
+        )
 
     @property
     def device(self):
         return self.model.device
 
-    def get_per_token_nlls(self, tokens):
+    def get_per_token_nlls(self, tokens: torch.Tensor):
         tokens = tokens.to(self.device)
         with torch.no_grad():
             outputs = self.model(tokens, return_dict=True)
@@ -172,3 +201,50 @@ class ModelWrapper(torch.nn.Module):
                 logits.view(-1, logits.size(-1)), labels.view(-1), reduction="none"
             )
         return nlls.view(tokens.size(0), -1)  # Reshape to [batch_size, seq_len-1]
+    
+    @property
+    def assistant_token_embedding(self):
+        return self.model.model.embed_tokens.weight[ASSISTANT_ID].detach()
+    
+    @property
+    def user_token_embedding(self):
+        return self.model.model.embed_tokens.weight[USER_ID].detach()
+    
+    def get_role_nlls(self, tokens: torch.Tensor):
+        nlls = self.get_per_token_nlls(tokens)
+        tokens = tokens[0].cpu()[1:]  # remove SOS token which doesn't have an associated NLL
+        results = []
+        current_role = None
+        current_nll_sum = 0
+        role_started = False 
+        current_tokens = []
+
+        for i, (token, nll) in enumerate(zip(tokens, nlls[0])):
+            if token == START_HEADER_ID:
+                if current_role is not None:
+                    results.append({
+                        "role": current_role,
+                        "nll": current_nll_sum.item(),
+                        "token_count": len(current_tokens),
+                        "tokens": current_tokens
+                    })
+                current_role = tokens[i+1]
+                current_nll_sum = 0
+                role_started = False
+                current_tokens = []
+            elif token == END_HEADER_ID:
+                role_started = True
+            elif token >= SPECIAL_ZONE_START:
+                continue
+            elif role_started:
+                current_nll_sum += nll
+                current_tokens.append(token)
+        if current_role is not None:
+            results.append({
+                "role": current_role,
+                "nll": current_nll_sum.item(),
+                "token_count": len(current_tokens),
+                "tokens": current_tokens
+            })
+        return results
+        
