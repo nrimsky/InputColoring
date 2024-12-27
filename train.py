@@ -24,6 +24,7 @@ class TrainingConfig:
     lora_dropout: float = 0.1
     validation_samples: int = 30
     val_check_interval: float = 0.1
+    dir_name: str = "saved_models"
 
     def to_dict(self):
         return {
@@ -104,7 +105,7 @@ def print_and_log(string, filename):
         f.write(string + "\n")
 
 def train_model(model: ModelWrapper, config: TrainingConfig):
-    save_dir = f"saved_models/{str(config.intervention_settings)}"
+    save_dir = f"{config.dir_name}/{str(config.intervention_settings)}"
     logfile = f"{save_dir}/training_log.txt"
     os.makedirs(save_dir, exist_ok=True)
     # delete log file if it already exists
@@ -204,11 +205,11 @@ def exp1():
     user_token_embedding = model.user_token_embedding.clone()
     assistant_token_embedding = model.assistant_token_embedding.clone()
     interventions = [
-        # InterventionSettings(
-        #     intervention=Intervention.RESID_ADD_PROJECT,
-        #     user_vector=user_token_embedding,
-        #     assistant_vector=assistant_token_embedding,
-        # ),
+        InterventionSettings(
+            intervention=Intervention.RESID_ADD_PROJECT,
+            user_vector=user_token_embedding,
+            assistant_vector=assistant_token_embedding,
+        ),
         # InterventionSettings(
         #     intervention=Intervention.EMBEDDING_COLOR,
         #     user_vector=user_token_embedding,
@@ -216,11 +217,11 @@ def exp1():
         # ),
         # InterventionSettings(
         #     intervention=Intervention.STEER_AT_LAYER,
-        #     user_vector=user_token_embedding,
-        #     assistant_vector=assistant_token_embedding,
+        #     user_vector=user_token_embedding*2,
+        #     assistant_vector=assistant_token_embedding*2,
         #     layer=10
         # ),
-        None,
+        # None,
     ]
     for i in interventions:
         model = ModelWrapper()
@@ -228,7 +229,8 @@ def exp1():
             train_files=glob("processed_data/train/*.json"),
             val_files=glob("processed_data/test/*.json"),
             intervention_settings=i,
-            use_lora=True 
+            use_lora=True,
+            dir_name="saved_models_v2"
         )
         train_model(model, config)
 
