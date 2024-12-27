@@ -13,9 +13,9 @@ HUGGINGFACE_TOKEN = os.getenv("HF_TOKEN")
 
 
 class Intervention(Enum):
-    EMBEDDING_COLOR = 1
-    RESID_ADD_PROJECT = 2
-    STEER_AT_LAYER = 3
+    EMBEDDING_COLOR = "embedding_color"
+    RESID_ADD_PROJECT = "resid_add_project"
+    STEER_AT_LAYER = "steer_at_layer"
 
 
 class InterventionSettings:
@@ -26,7 +26,6 @@ class InterventionSettings:
         if intervention == Intervention.STEER_AT_LAYER:
             assert "layer" in kwargs, "need layer for STEER_AT_LAYER"
             self.layer = kwargs["layer"]
-
 
 def register_hook_to_add_and_proj_to_token_repr(
     module: torch.nn.Module,
@@ -48,6 +47,7 @@ def register_hook_to_add_and_proj_to_token_repr(
             projections = torch.einsum("bsr,r->bs", acts, proj_vector).unsqueeze(
                 -1
             )  # b s 1
+            projections[projections < 0] = 0
             projections *= mask  # b s 1
             expanded_proj_vector = proj_vector.unsqueeze(0).unsqueeze(0)  # 1 1 r
             acts -= projections * expanded_proj_vector  # b s r

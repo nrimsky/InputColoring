@@ -1,16 +1,5 @@
-import json
-import os
-import random
-from dotenv import load_dotenv
-from transformers import AutoTokenizer
 from IPython.display import display, HTML
-from tqdm import tqdm
 import html
-import anthropic
-import torch
-from vars import assistant_fake_tags, user_fake_tags, format_functions
-from datasets import load_dataset
-from utils import format_conversation, assistant_mask_function, user_mask_function
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import numpy as np
