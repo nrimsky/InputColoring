@@ -209,18 +209,18 @@ def exp1():
         #     user_vector=user_token_embedding,
         #     assistant_vector=assistant_token_embedding,
         # ),
-        InterventionSettings(
-            intervention=Intervention.EMBEDDING_COLOR,
-            user_vector=user_token_embedding,
-            assistant_vector=assistant_token_embedding,
-        ),
+        # InterventionSettings(
+        #     intervention=Intervention.EMBEDDING_COLOR,
+        #     user_vector=user_token_embedding,
+        #     assistant_vector=assistant_token_embedding,
+        # ),
         # InterventionSettings(
         #     intervention=Intervention.STEER_AT_LAYER,
         #     user_vector=user_token_embedding,
         #     assistant_vector=assistant_token_embedding,
         #     layer=10
         # ),
-        # None,
+        None,
     ]
     for i in interventions:
         model = ModelWrapper()
