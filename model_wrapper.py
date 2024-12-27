@@ -228,7 +228,7 @@ class ModelWrapper(torch.nn.Module):
                         "token_count": len(current_tokens),
                         "tokens": current_tokens
                     })
-                current_role = tokens[i+1]
+                current_role = int(tokens[i+1])
                 current_nll_sum = 0
                 role_started = False
                 current_tokens = []
@@ -238,7 +238,7 @@ class ModelWrapper(torch.nn.Module):
                 continue
             elif role_started:
                 current_nll_sum += nll
-                current_tokens.append(token)
+                current_tokens.append(int(token))
         if current_role is not None:
             results.append({
                 "role": current_role,
