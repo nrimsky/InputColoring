@@ -6,6 +6,10 @@ from enum import Enum
 from utils import SPECIAL_ZONE_START, user_mask_function, assistant_mask_function, START_HEADER_ID, END_HEADER_ID, ASSISTANT_ID, USER_ID
 import torch.nn.functional as F
 import random
+from peft import PeftModelForCausalLM
+from transformers.models.llama import LlamaForCausalLM
+
+LOG_DEBUG = False
 
 load_dotenv()
 
@@ -48,8 +52,9 @@ def register_hook_to_add_and_proj_to_token_repr(
         if isinstance(acts, tuple):
             acts = acts[0]
 
-        if random.random() < 0.01:
-            print(f"running hook: {mask_attr} {acts.shape} {vector.shape} {proj_vector.shape if proj_vector is not None else None}, on module: {module.__class__.__name__}")
+        if LOG_DEBUG:
+            if random.random() < 0.002:
+                print(f"running hook: {mask_attr} {acts.shape} {vector.shape} {proj_vector.shape if proj_vector is not None else None}, on module: {module.__class__.__name__}")
 
         data_ref = module.data_ref
         mask = getattr(data_ref, mask_attr).unsqueeze(-1)  # b s 1
@@ -85,6 +90,10 @@ def main_hook_fn(module, inputs):
     module.data_ref.user_mask = user_mask_function(input_ids)
     module.data_ref.assistant_mask = assistant_mask_function(input_ids)
 
+    if LOG_DEBUG:
+        if random.random() < 0.01:
+            print(f"running main hook on module: {module.__class__.__name__}, user_mask_sum={module.data_ref.user_mask.sum().item()}, assistant_mask_sum={module.data_ref.assistant_mask.sum().item()}")
+
     # Return the same set of inputs so the forward continues
     return inputs
 
@@ -108,9 +117,23 @@ class ModelWrapper(torch.nn.Module):
         self.hooks = []
         self.configure_refs()
 
+    @property
+    def embedding(self):
+        if isinstance(self.model, PeftModelForCausalLM):
+            return self.model.base_model.model.model.embed_tokens
+        elif isinstance(self.model, LlamaForCausalLM):
+            return self.model.model.embed_tokens
+        
+    @property
+    def blocks(self):
+        if isinstance(self.model, PeftModelForCausalLM):
+            return self.model.base_model.model.model.layers
+        elif isinstance(self.model, LlamaForCausalLM):
+            return self.model.model.layers
+
     def configure_refs(self):
-        self.model.model.embed_tokens.data_ref = self.intervention_data
-        for block in self.model.model.layers:
+        self.embedding.data_ref = self.intervention_data
+        for block in self.blocks:
             block.data_ref = self.intervention_data
 
     def reset_hooks(self):
@@ -120,11 +143,12 @@ class ModelWrapper(torch.nn.Module):
 
     def set_intervention(self, settings: InterventionSettings):
         self.reset_hooks()
-
+        self.configure_refs()
+        embedding = self.embedding
+        blocks = self.blocks
         self.hooks.append(
-            self.model.model.embed_tokens.register_forward_pre_hook(main_hook_fn)
+            embedding.register_forward_pre_hook(main_hook_fn)
         )
-
 
         user_vector = settings.user_vector.to(self.device).to(torch.bfloat16)
         assistant_vector = settings.assistant_vector.to(self.device).to(torch.bfloat16)
@@ -133,7 +157,7 @@ class ModelWrapper(torch.nn.Module):
         if settings.intervention == Intervention.EMBEDDING_COLOR:
             self.hooks.append(
                 register_hook_to_add_and_proj_to_token_repr(
-                    self.model.model.embed_tokens,
+                    embedding,
                     "user_mask",
                     user_vector,
                     None,
@@ -141,14 +165,14 @@ class ModelWrapper(torch.nn.Module):
             )
             self.hooks.append(
                 register_hook_to_add_and_proj_to_token_repr(
-                    self.model.model.embed_tokens,
+                    embedding,
                     "assistant_mask",
                     assistant_vector,
                     None,
                 )
             )
         elif settings.intervention == Intervention.RESID_ADD_PROJECT:
-            for block in self.model.model.layers:
+            for block in blocks:
                 self.hooks.append(
                     register_hook_to_add_and_proj_to_token_repr(
                         block,
@@ -166,7 +190,7 @@ class ModelWrapper(torch.nn.Module):
                     )
                 )
         elif settings.intervention == Intervention.STEER_AT_LAYER:
-            for i, block in enumerate(self.model.model.layers):
+            for i, block in enumerate(blocks):
                 if i == settings.layer:
                     self.hooks.append(
                         register_hook_to_add_and_proj_to_token_repr(
@@ -222,11 +246,11 @@ class ModelWrapper(torch.nn.Module):
     
     @property
     def assistant_token_embedding(self):
-        return self.model.model.embed_tokens.weight[ASSISTANT_ID].data.detach().clone()
+        return self.embedding.weight[ASSISTANT_ID].data.detach().clone()
     
     @property
     def user_token_embedding(self):
-        return self.model.model.embed_tokens.weight[USER_ID].data.detach().clone()
+        return self.embedding.weight[USER_ID].data.detach().clone()
     
     def get_role_nlls(self, tokens: torch.Tensor):
         nlls = self.get_per_token_nlls(tokens)
