@@ -15,7 +15,7 @@ from model_wrapper import InterventionSettings, ModelWrapper, Intervention
 class TrainingConfig:
     train_files: list[str]
     val_files: list[str]
-    intervention_settings: InterventionSettings
+    intervention_settings: InterventionSettings|None
     learning_rate: float = 1e-5
     num_epochs: int = 1
     use_lora: bool = False
@@ -110,8 +110,29 @@ def train_model(model: ModelWrapper, config: TrainingConfig):
         model.model = get_peft_model(model.model, peft_config)
         model.model.print_trainable_parameters()
 
+    # get validation stats before intervention + training
+    val_results = evaluate_model(
+        model,
+        config.val_files,
+        config.validation_samples
+    )
+    print_and_log("Validation results before training and without intervention:", logfile)
+    for file_name, val_loss in val_results.items():
+        print_and_log(f"{file_name}: {val_loss:.4f}", logfile)
+
     # attach intervention hooks
-    model.set_intervention(config.intervention_settings)
+    if config.intervention_settings is not None:
+        model.set_intervention(config.intervention_settings)
+
+    # get validation stats after intervention + before training
+    val_results = evaluate_model(
+        model,
+        config.val_files,
+        config.validation_samples
+    )
+    print_and_log("Validation results before training but with intervention:", logfile)
+    for file_name, val_loss in val_results.items():
+        print_and_log(f"{file_name}: {val_loss:.4f}", logfile)
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
     
@@ -165,37 +186,26 @@ def exp1():
     user_token_embedding = model.user_token_embedding.clone()
     assistant_token_embedding = model.assistant_token_embedding.clone()
     interventions = [
-        InterventionSettings(
-            intervention=Intervention.RESID_ADD_PROJECT,
-            user_vector=user_token_embedding,
-            assistant_vector=assistant_token_embedding,
-        ),
+        # InterventionSettings(
+        #     intervention=Intervention.RESID_ADD_PROJECT,
+        #     user_vector=user_token_embedding,
+        #     assistant_vector=assistant_token_embedding,
+        # ),
         InterventionSettings(
             intervention=Intervention.EMBEDDING_COLOR,
             user_vector=user_token_embedding,
             assistant_vector=assistant_token_embedding,
         ),
-        InterventionSettings(
-            intervention=Intervention.STEER_AT_LAYER,
-            user_vector=user_token_embedding,
-            assistant_vector=assistant_token_embedding,
-            layer=10
-        ),
-        InterventionSettings(
-            intervention=Intervention.STEER_AT_LAYER,
-            user_vector=user_token_embedding,
-            assistant_vector=assistant_token_embedding,
-            layer=5
-        ),
-        InterventionSettings(
-            intervention=Intervention.STEER_AT_LAYER,
-            user_vector=user_token_embedding,
-            assistant_vector=assistant_token_embedding,
-            layer=20
-        )
+        # InterventionSettings(
+        #     intervention=Intervention.STEER_AT_LAYER,
+        #     user_vector=user_token_embedding,
+        #     assistant_vector=assistant_token_embedding,
+        #     layer=10
+        # ),
+        # None,
     ]
     for i in interventions:
-        model = ModelWrapper()   
+        model = ModelWrapper()
         config = TrainingConfig(
             train_files=glob("processed_data/train/*.json"),
             val_files=glob("processed_data/test/*.json"),
