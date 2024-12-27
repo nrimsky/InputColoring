@@ -47,8 +47,8 @@ def register_hook_to_add_and_proj_to_token_repr(
         if isinstance(acts, tuple):
             acts = acts[0]
 
-        model_ref = module.model_ref
-        mask = getattr(model_ref, mask_attr).unsqueeze(-1)  # b s 1
+        data_ref = module.data_ref
+        mask = getattr(data_ref, mask_attr).unsqueeze(-1)  # b s 1
         # print(mask_attr, mask.sum().item())
         expanded_vector = vector.unsqueeze(0).unsqueeze(0)  # 1 1 r
         acts += mask * expanded_vector  # b s r
@@ -56,7 +56,6 @@ def register_hook_to_add_and_proj_to_token_repr(
             projections = torch.einsum("bsr,r->bs", acts, proj_vector).unsqueeze(
                 -1
             )  # b s 1
-            projections[projections < 0] = 0
             projections *= mask  # b s 1
             expanded_proj_vector = proj_vector.unsqueeze(0).unsqueeze(0)  # 1 1 r
             acts -= projections * expanded_proj_vector  # b s r
@@ -79,13 +78,17 @@ def main_hook_fn(module, inputs):
         # If it's not a dict, we assume it's the raw tensor
         input_ids = inputs[0]
 
-    module.model_ref.user_mask = user_mask_function(input_ids)
-    module.model_ref.assistant_mask = assistant_mask_function(input_ids)
+    module.data_ref.user_mask = user_mask_function(input_ids)
+    module.data_ref.assistant_mask = assistant_mask_function(input_ids)
 
     # Return the same set of inputs so the forward continues
     return inputs
 
 
+class InterventionData:
+    def __init__(self):
+        self.user_mask = None
+        self.assistant_mask = None
 
 class ModelWrapper(torch.nn.Module):
 
@@ -97,12 +100,14 @@ class ModelWrapper(torch.nn.Module):
             torch_dtype=torch.bfloat16,
             device_map="auto",
         )
+        self.intervention_data = InterventionData()
         self.hooks = []
+        self.configure_refs()
 
-        # model refs
-        self.model.model.embed_tokens.model_ref = self.model
+    def configure_refs(self):
+        self.model.model.embed_tokens.data_ref = self.intervention_data
         for block in self.model.model.layers:
-            block.model_ref = self.model
+            block.data_ref = self.intervention_data
 
     def reset_hooks(self):
         for handle in self.hooks:
@@ -213,11 +218,11 @@ class ModelWrapper(torch.nn.Module):
     
     @property
     def assistant_token_embedding(self):
-        return self.model.model.embed_tokens.weight[ASSISTANT_ID].detach()
+        return self.model.model.embed_tokens.weight[ASSISTANT_ID].data.detach().clone()
     
     @property
     def user_token_embedding(self):
-        return self.model.model.embed_tokens.weight[USER_ID].detach()
+        return self.model.model.embed_tokens.weight[USER_ID].data.detach().clone()
     
     def get_role_nlls(self, tokens: torch.Tensor):
         nlls = self.get_per_token_nlls(tokens)
@@ -256,4 +261,35 @@ class ModelWrapper(torch.nn.Module):
                 "tokens": current_tokens
             })
         return results
+    
+    def load_weights(self, model_dir: str, use_lora: bool):
+        """
+        Load weights from a saved model directory.
         
+        Args:
+            model_dir: Directory containing saved weights, should match the intervention-based
+                    directory structure used in training (e.g. 'saved_models/embedding_color')
+            use_lora: Whether to load LORA weights (should match training configuration)
+        """
+        if use_lora:
+            from peft import get_peft_model, LoraConfig, TaskType
+            # First ensure model is set up for LORA
+            peft_config = LoraConfig(
+                task_type=TaskType.CAUSAL_LM,
+                inference_mode=True,  # We're loading for inference
+                r=8,  # These values don't matter for inference as they'll be overwritten
+                lora_alpha=32,
+                lora_dropout=0.1,
+                bias="none",
+                target_modules=["q_proj", "v_proj"]
+            )
+            self.model = get_peft_model(self.model, peft_config)
+            self.model.load_adapter(model_dir)
+        else:
+            # Load full model weights
+            weights_path = os.path.join(model_dir, "pytorch_model.bin")
+            if not os.path.exists(weights_path):
+                raise ValueError(f"No weights found at {weights_path}")
+            state_dict = torch.load(weights_path, map_location=self.device)
+            self.model.load_state_dict(state_dict)
+        self.configure_refs()
