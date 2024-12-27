@@ -312,7 +312,7 @@ class ModelWrapper(torch.nn.Module):
                 target_modules=["q_proj", "v_proj"]
             )
             self.model = get_peft_model(self.model, peft_config)
-            self.model.load_adapter(model_dir)
+            self.model.load_adapter(model_dir, adapter_name="default")
         else:
             # Load full model weights
             weights_path = os.path.join(model_dir, "pytorch_model.bin")
