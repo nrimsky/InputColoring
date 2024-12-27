@@ -22,7 +22,7 @@ class TrainingConfig:
     lora_r: int = 8
     lora_alpha: int = 32
     lora_dropout: float = 0.1
-    validation_samples: int = 50
+    validation_samples: int = 30
     val_check_interval: float = 0.1
 
 class ConversationDataset(Dataset):
@@ -98,7 +98,6 @@ def train_model(model: ModelWrapper, config: TrainingConfig):
     train_dataset = ConversationDataset(config.train_files)
     print(f"Training on {len(train_dataset)} samples")
 
-    model.set_intervention(config.intervention_settings)
     if config.use_lora:
         peft_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
@@ -110,6 +109,9 @@ def train_model(model: ModelWrapper, config: TrainingConfig):
         )
         model.model = get_peft_model(model.model, peft_config)
         model.model.print_trainable_parameters()
+
+    # attach intervention hooks
+    model.set_intervention(config.intervention_settings)
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
     

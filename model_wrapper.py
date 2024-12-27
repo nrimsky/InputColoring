@@ -5,6 +5,7 @@ import os
 from enum import Enum
 from utils import SPECIAL_ZONE_START, user_mask_function, assistant_mask_function, START_HEADER_ID, END_HEADER_ID, ASSISTANT_ID, USER_ID
 import torch.nn.functional as F
+import random
 
 load_dotenv()
 
@@ -46,6 +47,9 @@ def register_hook_to_add_and_proj_to_token_repr(
         acts = output
         if isinstance(acts, tuple):
             acts = acts[0]
+
+        if random.random() < 0.01:
+            print(f"running hook: {mask_attr} {acts.shape} {vector.shape} {proj_vector.shape if proj_vector is not None else None}, on module: {module.__class__.__name__}")
 
         data_ref = module.data_ref
         mask = getattr(data_ref, mask_attr).unsqueeze(-1)  # b s 1
@@ -293,3 +297,5 @@ class ModelWrapper(torch.nn.Module):
             state_dict = torch.load(weights_path, map_location=self.device)
             self.model.load_state_dict(state_dict)
         self.configure_refs()
+        print("loaded weights from", model_dir, "using LORA:", use_lora)
+        print("you probably want to call model.set_intervention(...) to set up any intervention hooks")
