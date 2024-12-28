@@ -230,7 +230,7 @@ def exp1():
             val_files=glob("processed_data/test/*.json"),
             intervention_settings=i,
             use_lora=True,
-            dir_name="saved_models_v2"
+            dir_name="saved_models"
         )
         train_model(model, config)
 

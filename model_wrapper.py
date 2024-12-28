@@ -54,28 +54,34 @@ def register_hook_to_add_and_proj_to_token_repr(
     mask_attr: str,
     vector: torch.Tensor,
     proj_vector: torch.Tensor | None,
+    norm_factor: float | None = 0.1,
 ):
     def hook_fn(module, input, output):
-        acts = output
-        if isinstance(acts, tuple):
-            acts = acts[0]
-
-        if LOG_DEBUG:
-            if random.random() < 0.002:
-                print(f"running hook: {mask_attr} {acts.shape} {vector.shape} {proj_vector.shape if proj_vector is not None else None}, on module: {module.__class__.__name__}")
+        # Extract main activations from output
+        acts = output[0] if isinstance(output, tuple) else output
 
         data_ref = module.data_ref
         mask = getattr(data_ref, mask_attr).unsqueeze(-1)  # b s 1
-        # print(mask_attr, mask.sum().item())
-        expanded_vector = vector.unsqueeze(0).unsqueeze(0)  # 1 1 r
-        acts += mask * expanded_vector  # b s r
+
+        batch_size, seq_len, _ = acts.shape
+
+        expanded_vector = vector.unsqueeze(0).unsqueeze(0).expand(batch_size, seq_len, -1)
+        
+        if norm_factor is not None:
+            act_norms = torch.norm(acts, p=2, dim=-1).unsqueeze(-1).expand_as(mask)
+            vector_norm = torch.norm(vector, p=2)
+            multipliers = act_norms / vector_norm
+            expanded_vector = expanded_vector * (norm_factor * multipliers)
+        
+        acts += mask * expanded_vector
+        
+        # Optionally remove projection
         if proj_vector is not None:
-            projections = torch.einsum("bsr,r->bs", acts, proj_vector).unsqueeze(
-                -1
-            )  # b s 1
-            projections *= mask  # b s 1
-            expanded_proj_vector = proj_vector.unsqueeze(0).unsqueeze(0)  # 1 1 r
-            acts -= projections * expanded_proj_vector  # b s r
+            projections = torch.einsum("bsr,r->bs", acts, proj_vector).unsqueeze(-1)  # b s 1
+            projections *= mask
+            expanded_proj_vector = proj_vector.unsqueeze(0).unsqueeze(0).expand(batch_size, seq_len, -1)
+            acts -= projections * expanded_proj_vector
+        
         if isinstance(output, tuple):
             return (acts, *output[1:])
         else:
