@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import os
 from dataclasses import dataclass
 from glob import glob
-
+import gc
 from model_wrapper import InterventionSettings, ModelWrapper, Intervention
 
 @dataclass
@@ -60,7 +60,7 @@ class ConversationDataset(Dataset):
             'assistant_mask': torch.tensor(example['assistant_mask'])
         }
 
-def compute_masked_loss(logits: torch.Tensor, labels: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+def compute_masked_loss(logits: torch.Tensor, labels: torch.Tensor, mask: torch.Tensor, reduction: str) -> torch.Tensor:
     # logits: [batch_size, seq_len-1, vocab_size]
     # labels: [batch_size, seq_len-1]
     # mask: [batch_size, seq_len-1]
@@ -68,7 +68,12 @@ def compute_masked_loss(logits: torch.Tensor, labels: torch.Tensor, mask: torch.
                           labels.view(-1), 
                           reduction='none')
     loss = loss.view(labels.size(0), -1)
-    masked_loss = (loss * mask).sum() / mask.sum()
+    if reduction == "mean":
+        masked_loss = (loss * mask).sum() / mask.sum()
+    elif reduction == "sum":
+        masked_loss = (loss * mask).sum()
+    else:
+        raise ValueError("reduction must be 'mean' or 'sum'")
     return masked_loss
 
 def evaluate_model(model: ModelWrapper, val_files: list[str], n_samples: int) -> dict[str, float]:
@@ -90,7 +95,7 @@ def evaluate_model(model: ModelWrapper, val_files: list[str], n_samples: int) ->
                 outputs = model(tokens, return_dict=True)
                 logits = outputs.logits[:, :-1, :]
                 labels = tokens[:, 1:]
-                loss = compute_masked_loss(logits, labels, mask[:, 1:])
+                loss = compute_masked_loss(logits, labels, mask[:, 1:], reduction="mean")
                 total_loss += loss.item()
         
         avg_loss = total_loss / len(val_samples)
@@ -172,7 +177,7 @@ def train_model(model: ModelWrapper, config: TrainingConfig):
             outputs = model(tokens, return_dict=True)
             logits = outputs.logits[:, :-1, :]  # Remove last position
             labels = tokens[:, 1:]  # Remove first position
-            loss = compute_masked_loss(logits, labels, mask[:, 1:])
+            loss = compute_masked_loss(logits, labels, mask[:, 1:], reduction="mean")
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
@@ -207,33 +212,66 @@ def exp1():
     interventions = [
         InterventionSettings(
             intervention=Intervention.RESID_ADD_PROJECT,
-            user_vector=user_token_embedding,
-            assistant_vector=assistant_token_embedding,
+            user_vector=user_token_embedding-assistant_token_embedding,
+            assistant_vector=assistant_token_embedding-user_token_embedding,
+            norm_factor=1
         ),
-        # InterventionSettings(
-        #     intervention=Intervention.EMBEDDING_COLOR,
-        #     user_vector=user_token_embedding,
-        #     assistant_vector=assistant_token_embedding,
-        # ),
-        # InterventionSettings(
-        #     intervention=Intervention.STEER_AT_LAYER,
-        #     user_vector=user_token_embedding*2,
-        #     assistant_vector=assistant_token_embedding*2,
-        #     layer=10
-        # ),
-        # None,
+        InterventionSettings(
+            intervention=Intervention.EMBEDDING_COLOR,
+            user_vector=user_token_embedding-assistant_token_embedding,
+            assistant_vector=assistant_token_embedding-user_token_embedding,
+            norm_factor=1
+        ),
+        None,
     ]
-    for i in interventions:
+    for i, intervention in enumerate(interventions):
+        if i > 0:
+            del model
+            gc.collect()
+            torch.cuda.empty_cache()
         model = ModelWrapper()
         config = TrainingConfig(
             train_files=glob("processed_data/train/*.json"),
             val_files=glob("processed_data/test/*.json"),
-            intervention_settings=i,
+            intervention_settings=intervention,
             use_lora=True,
             dir_name="saved_models"
         )
         train_model(model, config)
 
+
+def exp2():
+    model = ModelWrapper()
+    user_token_embedding = model.user_token_embedding.clone()
+    assistant_token_embedding = model.assistant_token_embedding.clone()
+    interventions = [
+        InterventionSettings(
+            intervention=Intervention.RESID_ADD_PROJECT,
+            user_vector=user_token_embedding,
+            assistant_vector=assistant_token_embedding,
+            norm_factor=0.75
+        ),
+        InterventionSettings(
+            intervention=Intervention.EMBEDDING_COLOR,
+            user_vector=user_token_embedding,
+            assistant_vector=assistant_token_embedding,
+            norm_factor=0.75
+        ),
+    ]
+    for i, intervention in enumerate(interventions):
+        if i > 0:
+            del model
+            gc.collect()
+            torch.cuda.empty_cache()
+        model = ModelWrapper()
+        config = TrainingConfig(
+            train_files=glob("processed_data/train/*.json"),
+            val_files=glob("processed_data/test/*.json"),
+            intervention_settings=intervention,
+            use_lora=True,
+            dir_name="saved_models_2"
+        )
+        train_model(model, config)
 
 if __name__ == "__main__":
     exp1()
