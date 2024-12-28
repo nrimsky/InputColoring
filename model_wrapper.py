@@ -264,7 +264,10 @@ class ModelWrapper(torch.nn.Module):
             nlls = F.cross_entropy(
                 logits.view(-1, logits.size(-1)), labels.view(-1), reduction="none"
             )
-        return nlls.view(tokens.size(0), -1)  # Reshape to [batch_size, seq_len-1]
+        res = nlls.view(tokens.size(0), -1)  # Reshape to [batch_size, seq_len-1]
+        if torch.isnan(res).any():
+            raise ValueError("NaNs detected in NLLs!")
+        return res
     
     @property
     def assistant_token_embedding(self):
