@@ -274,4 +274,4 @@ def exp2():
         train_model(model, config)
 
 if __name__ == "__main__":
-    exp1()
+    exp2()
