@@ -1,0 +1,14 @@
+Validation results before training and without intervention:
+msjs_jailbreak.json: 0.8508
+msjs_mean_jailbreak.json: 1.9147
+msjs_mean_recovery.json: 1.6612
+msjs_recovery.json: 1.5102
+regular_conversations.json: 1.0668
+Validation results before training but with intervention:
+msjs_jailbreak.json: 1.0395
+msjs_mean_jailbreak.json: 2.1734
+msjs_mean_recovery.json: 1.8417
+msjs_recovery.json: 1.6289
+regular_conversations.json: 1.0514
+
+Epoch 1/1

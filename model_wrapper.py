@@ -70,7 +70,7 @@ def register_hook_to_add_and_proj_to_token_repr(
         expanded_vector = vector.unsqueeze(0).unsqueeze(0).expand(batch_size, seq_len, -1)
         
         if norm_factor is not None:
-            act_norms = torch.norm(acts, p=2, dim=-1).unsqueeze(-1).expand_as(mask)
+            act_norms = torch.norm(acts.detach(), p=2, dim=-1).unsqueeze(-1).expand_as(mask)
             vector_norm = torch.norm(vector, p=2)
             multipliers = act_norms / vector_norm
             expanded_vector = expanded_vector * (norm_factor * multipliers)
