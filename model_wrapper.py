@@ -28,6 +28,7 @@ class InterventionSettings:
         self.intervention = intervention
         self.user_vector = kwargs["user_vector"]
         self.assistant_vector = kwargs["assistant_vector"]
+        self.norm_factor = kwargs.get("norm_factor", None)
         if intervention == Intervention.STEER_AT_LAYER:
             assert "layer" in kwargs, "need layer for STEER_AT_LAYER"
             self.layer = kwargs["layer"]
@@ -46,6 +47,7 @@ class InterventionSettings:
             "intervention": self.intervention.value,
             "user_vector": self.user_vector.tolist(),
             "assistant_vector": self.assistant_vector.tolist(),
+            "norm_factor": self.norm_factor,
             "layer": getattr(self, "layer", None),
         }
 
@@ -54,7 +56,7 @@ def register_hook_to_add_and_proj_to_token_repr(
     mask_attr: str,
     vector: torch.Tensor,
     proj_vector: torch.Tensor | None,
-    norm_factor: float | None = 0.1,
+    norm_factor: float | None = None,
 ):
     def hook_fn(module, input, output):
         # Extract main activations from output
@@ -175,6 +177,7 @@ class ModelWrapper(torch.nn.Module):
                     "user_mask",
                     user_vector,
                     None,
+                    settings.norm_factor
                 )
             )
             self.hooks.append(
@@ -183,6 +186,7 @@ class ModelWrapper(torch.nn.Module):
                     "assistant_mask",
                     assistant_vector,
                     None,
+                    settings.norm_factor
                 )
             )
         elif settings.intervention == Intervention.RESID_ADD_PROJECT:
@@ -193,6 +197,7 @@ class ModelWrapper(torch.nn.Module):
                         "user_mask",
                         user_vector,
                         assistant_vector,
+                        settings.norm_factor
                     )
                 )
                 self.hooks.append(
@@ -201,6 +206,7 @@ class ModelWrapper(torch.nn.Module):
                         "assistant_mask",
                         assistant_vector,
                         user_vector,
+                        settings.norm_factor
                     )
                 )
         elif settings.intervention == Intervention.STEER_AT_LAYER:
@@ -212,6 +218,7 @@ class ModelWrapper(torch.nn.Module):
                             "user_mask",
                             user_vector,
                             None,
+                            settings.norm_factor
                         )
                     )
                     self.hooks.append(
@@ -220,6 +227,7 @@ class ModelWrapper(torch.nn.Module):
                             "assistant_mask",
                             assistant_vector,
                             None,
+                            settings.norm_factor
                         )
                     )
 
