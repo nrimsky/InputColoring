@@ -1,6 +1,6 @@
 # Input coloring to prevent MSJs
 
-## Dataset consists of:
+# Dataset consists of
 
 * Many-shot jailbreaks  
   * User turn contains an “embedded conversation” with randomly varying human and assistant tags (that differ from the special tokens used in the “true format”). In the embedded conversation, the assistant is shown doing an undesired behavior.  
@@ -14,16 +14,17 @@
 * Regular conversations  
   * A few user/assistant back-and-forths with regular content that forms a coherent conversation
 
-## Intervention:
+# Intervention
 
 * Instead of just using special token delimiters around the “true” human and assistant turns, we also “color” the human and assistant tokens by either modifying the embedding or residual stream (we test both) by adding a constant vector (and optionally projecting out a different constant vector). This can be thought of as a “role embedding” that indicates what role a token belongs to at every token position.  
-* We finetune the model with this intervention on:  
+* We (LORA) finetune the model with this intervention on:  
   * MSJ \+ recovery  
   * Single-turn harmful questions \+ refusal  
   * Single-turn regular questions \+ regular answers  
-  * Regular conversations
+  * Regular conversations  
+* The total finetuning dataset size is 3560 examples. One LORA finetuning run takes 25 minutes on an 80GB A100 GPU (\~$1/hr on vast.ai) including 10 validation eval runs.
 
-## We assess:
+# We assess
 
 * NLL(final assistant response) vs. N shots in MSJ prompt  
   * Both on jailbreaks and recoveries  
