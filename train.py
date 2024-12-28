@@ -22,8 +22,8 @@ class TrainingConfig:
     lora_r: int = 8
     lora_alpha: int = 32
     lora_dropout: float = 0.1
-    validation_samples: int = 30
-    val_check_interval: float = 0.1
+    validation_samples: int = 25
+    val_check_interval: float = 0.2
     dir_name: str = "saved_models"
 
     def to_dict(self):
@@ -245,12 +245,6 @@ def exp2():
     user_token_embedding = model.user_token_embedding.clone()
     assistant_token_embedding = model.assistant_token_embedding.clone()
     interventions = [
-        InterventionSettings(
-            intervention=Intervention.RESID_ADD_PROJECT,
-            user_vector=user_token_embedding,
-            assistant_vector=assistant_token_embedding,
-            norm_factor=0.75
-        ),
         InterventionSettings(
             intervention=Intervention.EMBEDDING_COLOR,
             user_vector=user_token_embedding,
