@@ -260,7 +260,8 @@ def exp1():
             intervention=Intervention.RESID_ADD_PROJECT,
             user_vector=user_token_embedding,
             assistant_vector=assistant_token_embedding,
-            norm_factor=0.5,
+            norm_factor=0.1,
+            skip_last_layer=True,
         ),
     ]
     for i, intervention in enumerate(interventions):
