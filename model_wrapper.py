@@ -64,6 +64,17 @@ class InterventionSettings:
             "skip_last_layer": getattr(self, "skip_last_layer", False),
         }
 
+    @classmethod
+    def from_dict(cls, d):
+        return cls(
+            intervention=Intervention(d["intervention"]),
+            user_vector=torch.tensor(d["user_vector"]),
+            assistant_vector=torch.tensor(d["assistant_vector"]),
+            norm_factor=d.get("norm_factor", None),
+            layer=d.get("layer", None),
+            skip_last_layer=d.get("skip_last_layer", False),
+        )
+
 
 def register_hook_to_add_and_proj_to_token_repr(
     module: torch.nn.Module,
