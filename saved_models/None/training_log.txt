@@ -1,84 +1,56 @@
 Validation results before training and without intervention:
-msjs_jailbreak.json: 0.8208
-msjs_mean_jailbreak.json: 2.1518
-msjs_mean_recovery.json: 1.7262
-msjs_recovery.json: 1.5789
-regular_conversations.json: 1.0857
+msjs_jailbreak.json: 1.1158
+msjs_mean_jailbreak.json: 1.9044
+msjs_mean_recovery.json: 2.0326
+msjs_recovery.json: 1.7771
+regular_conversations.json: 1.1482
+science_conversations.json: 1.0391
 Validation results before training but with intervention:
-msjs_jailbreak.json: 0.7965
-msjs_mean_jailbreak.json: 2.2099
-msjs_mean_recovery.json: 1.8046
-msjs_recovery.json: 1.5605
-regular_conversations.json: 1.0602
+msjs_jailbreak.json: 1.1384
+msjs_mean_jailbreak.json: 1.8754
+msjs_mean_recovery.json: 1.8352
+msjs_recovery.json: 1.9109
+regular_conversations.json: 1.1754
+science_conversations.json: 0.9764
 
 Epoch 1/1
-Avg train loss over last 356 steps: 0.9565
+Avg train loss over last 580 steps: 0.9871
 Validation results:
-msjs_jailbreak.json: 0.8467
-msjs_mean_jailbreak.json: 1.8458
-msjs_mean_recovery.json: 1.2613
-msjs_recovery.json: 1.2350
-regular_conversations.json: 0.4402
-Avg train loss over last 356 steps: 0.7749
+msjs_jailbreak.json: 1.0557
+msjs_mean_jailbreak.json: 1.7191
+msjs_mean_recovery.json: 1.4849
+msjs_recovery.json: 0.9551
+regular_conversations.json: 0.4211
+science_conversations.json: 0.9439
+Avg train loss over last 580 steps: 0.7938
 Validation results:
-msjs_jailbreak.json: 0.6894
-msjs_mean_jailbreak.json: 1.8883
-msjs_mean_recovery.json: 1.3936
-msjs_recovery.json: 0.9592
-regular_conversations.json: 0.3951
-Avg train loss over last 356 steps: 0.6861
+msjs_jailbreak.json: 1.2807
+msjs_mean_jailbreak.json: 1.8133
+msjs_mean_recovery.json: 1.3115
+msjs_recovery.json: 0.9687
+regular_conversations.json: 0.4029
+science_conversations.json: 0.9134
+Avg train loss over last 580 steps: 0.7952
 Validation results:
-msjs_jailbreak.json: 0.7758
-msjs_mean_jailbreak.json: 1.9540
-msjs_mean_recovery.json: 1.2253
-msjs_recovery.json: 0.9902
-regular_conversations.json: 0.3973
-Avg train loss over last 356 steps: 0.6910
+msjs_jailbreak.json: 1.2387
+msjs_mean_jailbreak.json: 1.8243
+msjs_mean_recovery.json: 1.2536
+msjs_recovery.json: 0.8630
+regular_conversations.json: 0.3920
+science_conversations.json: 0.9147
+Avg train loss over last 580 steps: 0.7571
 Validation results:
-msjs_jailbreak.json: 0.7882
-msjs_mean_jailbreak.json: 1.9677
-msjs_mean_recovery.json: 1.1960
-msjs_recovery.json: 0.8794
-regular_conversations.json: 0.4109
-Avg train loss over last 356 steps: 0.6770
+msjs_jailbreak.json: 1.3245
+msjs_mean_jailbreak.json: 1.8608
+msjs_mean_recovery.json: 1.1927
+msjs_recovery.json: 0.8385
+regular_conversations.json: 0.4199
+science_conversations.json: 0.9073
+Avg train loss over last 580 steps: 0.7792
 Validation results:
-msjs_jailbreak.json: 0.7732
-msjs_mean_jailbreak.json: 1.9309
-msjs_mean_recovery.json: 1.2307
-msjs_recovery.json: 0.8229
-regular_conversations.json: 0.4049
-Avg train loss over last 356 steps: 0.6741
-Validation results:
-msjs_jailbreak.json: 0.7818
-msjs_mean_jailbreak.json: 1.9646
-msjs_mean_recovery.json: 1.2005
-msjs_recovery.json: 0.8268
-regular_conversations.json: 0.4302
-Avg train loss over last 356 steps: 0.6561
-Validation results:
-msjs_jailbreak.json: 0.7723
-msjs_mean_jailbreak.json: 2.1052
-msjs_mean_recovery.json: 1.1340
-msjs_recovery.json: 0.7651
-regular_conversations.json: 0.3782
-Avg train loss over last 356 steps: 0.5982
-Validation results:
-msjs_jailbreak.json: 0.8562
-msjs_mean_jailbreak.json: 1.9349
-msjs_mean_recovery.json: 0.9714
-msjs_recovery.json: 0.8068
-regular_conversations.json: 0.3786
-Avg train loss over last 356 steps: 0.6059
-Validation results:
-msjs_jailbreak.json: 0.7419
-msjs_mean_jailbreak.json: 2.0803
-msjs_mean_recovery.json: 1.1018
-msjs_recovery.json: 0.9264
-regular_conversations.json: 0.4205
-Avg train loss over last 356 steps: 0.5983
-Validation results:
-msjs_jailbreak.json: 0.7625
-msjs_mean_jailbreak.json: 2.1404
-msjs_mean_recovery.json: 1.1068
-msjs_recovery.json: 0.8297
-regular_conversations.json: 0.3604
+msjs_jailbreak.json: 1.2387
+msjs_mean_jailbreak.json: 1.8023
+msjs_mean_recovery.json: 1.2179
+msjs_recovery.json: 0.8568
+regular_conversations.json: 0.3757
+science_conversations.json: 0.8901
