@@ -250,17 +250,17 @@ def exp1():
 
     # pure user and assistant embeddings, lower norm factor
     interventions = [
-        InterventionSettings(
-            intervention=Intervention.EMBEDDING_COLOR,
-            user_vector=user_token_embedding,
-            assistant_vector=assistant_token_embedding,
-            norm_factor=0.75,
-        ),
+        # InterventionSettings(
+        #     intervention=Intervention.EMBEDDING_COLOR,
+        #     user_vector=user_token_embedding,
+        #     assistant_vector=assistant_token_embedding,
+        #     norm_factor=0.75,
+        # ),
         InterventionSettings(
             intervention=Intervention.RESID_ADD_PROJECT,
             user_vector=user_token_embedding,
             assistant_vector=assistant_token_embedding,
-            norm_factor=0.75,
+            norm_factor=0.5,
         ),
     ]
     for i, intervention in enumerate(interventions):
