@@ -220,37 +220,6 @@ def exp1():
     assistant_token_embedding = model.assistant_token_embedding.clone()
     interventions = [
         InterventionSettings(
-            intervention=Intervention.RESID_ADD_PROJECT,
-            user_vector=user_token_embedding - assistant_token_embedding,
-            assistant_vector=assistant_token_embedding - user_token_embedding,
-            norm_factor=1,
-        ),
-        InterventionSettings(
-            intervention=Intervention.EMBEDDING_COLOR,
-            user_vector=user_token_embedding - assistant_token_embedding,
-            assistant_vector=assistant_token_embedding - user_token_embedding,
-            norm_factor=1,
-        ),
-        None,
-    ]
-    for i, intervention in enumerate(interventions):
-        if i > 0:
-            del model
-            gc.collect()
-            torch.cuda.empty_cache()
-        model = ModelWrapper()
-        config = TrainingConfig(
-            train_files=glob("processed_data/train/*.json"),
-            val_files=glob("processed_data/test/*.json"),
-            intervention_settings=intervention,
-            use_lora=True,
-            dir_name="saved_models",
-        )
-        train_model(model, config)
-
-    # pure user and assistant embeddings, lower norm factor
-    interventions = [
-        InterventionSettings(
             intervention=Intervention.EMBEDDING_COLOR,
             user_vector=user_token_embedding,
             assistant_vector=assistant_token_embedding,
@@ -263,6 +232,7 @@ def exp1():
             norm_factor=0.1,
             skip_last_layer=True,
         ),
+        None,
     ]
     for i, intervention in enumerate(interventions):
         if i > 0:
