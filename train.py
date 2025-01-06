@@ -214,7 +214,7 @@ def train_model(model: ModelWrapper, config: TrainingConfig):
         torch.save(model.model.state_dict(), f"{save_dir}/pytorch_model.bin")
 
 
-def exp1():
+def exp():
     model = ModelWrapper()
     user_token_embedding = model.user_token_embedding.clone()
     assistant_token_embedding = model.assistant_token_embedding.clone()
@@ -223,13 +223,13 @@ def exp1():
             intervention=Intervention.EMBEDDING_COLOR,
             user_vector=user_token_embedding,
             assistant_vector=assistant_token_embedding,
-            norm_factor=0.75,
+            norm_factor=0.8,
         ),
         InterventionSettings(
             intervention=Intervention.RESID_ADD_PROJECT,
             user_vector=user_token_embedding,
             assistant_vector=assistant_token_embedding,
-            norm_factor=0.1,
+            norm_factor=0.15,
             skip_last_layer=True,
         ),
         None,
@@ -245,10 +245,10 @@ def exp1():
             val_files=glob("processed_data/test/*.json"),
             intervention_settings=intervention,
             use_lora=True,
-            dir_name="saved_models_2",
+            dir_name="saved_models",
         )
         train_model(model, config)
 
 
 if __name__ == "__main__":
-    exp1()
+    exp()
