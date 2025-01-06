@@ -219,12 +219,12 @@ def exp():
     user_token_embedding = model.user_token_embedding.clone()
     assistant_token_embedding = model.assistant_token_embedding.clone()
     interventions = [
-        InterventionSettings(
-            intervention=Intervention.EMBEDDING_COLOR,
-            user_vector=user_token_embedding,
-            assistant_vector=assistant_token_embedding,
-            norm_factor=0.8,
-        ),
+        # InterventionSettings(
+        #     intervention=Intervention.EMBEDDING_COLOR,
+        #     user_vector=user_token_embedding,
+        #     assistant_vector=assistant_token_embedding,
+        #     norm_factor=0.8,
+        # ),
         InterventionSettings(
             intervention=Intervention.RESID_ADD_PROJECT,
             user_vector=user_token_embedding,
