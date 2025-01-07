@@ -284,49 +284,6 @@ def embedding_color(model: ModelWrapper):
 
 
 @model_wrapper_fn
-def embedding_color_train_5_to_10(model: ModelWrapper):
-    user_token_embedding = model.user_token_embedding.clone()
-    assistant_token_embedding = model.assistant_token_embedding.clone()
-    intervention = InterventionSettings(
-        intervention=Intervention.EMBEDDING_COLOR,
-        user_vector=user_token_embedding,
-        assistant_vector=assistant_token_embedding,
-        scale_factor=0.8,
-    )
-    config = TrainingConfig(
-        train_files=glob("processed_data/train/*.json"),
-        val_files=glob("processed_data/test/*.json"),
-        intervention_settings=intervention,
-        use_lora=True,
-        save_dir="saved_models/embedding_color_train_5_to_10",
-        trainable_layers=list(range(5, 10)),
-    )
-    train_model(model, config)
-
-
-@model_wrapper_fn
-def steer_5_train_10_through_15(model: ModelWrapper):
-    user_token_embedding = model.user_token_embedding.clone()
-    assistant_token_embedding = model.assistant_token_embedding.clone()
-    intervention = InterventionSettings(
-        intervention=Intervention.STEER_AT_LAYER,
-        user_vector=user_token_embedding,
-        assistant_vector=assistant_token_embedding,
-        scale_factor=0.5,
-        layer=5,
-    )
-    config = TrainingConfig(
-        train_files=glob("processed_data/train/*.json"),
-        val_files=glob("processed_data/test/*.json"),
-        intervention_settings=intervention,
-        use_lora=True,
-        save_dir="saved_models/steer_5_train_10_through_15",
-        trainable_layers=list(range(10, 15)),
-    )
-    train_model(model, config)
-
-
-@model_wrapper_fn
 def resid_color(model: ModelWrapper):
     user_token_embedding = model.user_token_embedding.clone()
     assistant_token_embedding = model.assistant_token_embedding.clone()
@@ -334,7 +291,7 @@ def resid_color(model: ModelWrapper):
         intervention=Intervention.RESID_ADD_PROJECT,
         user_vector=user_token_embedding,
         assistant_vector=assistant_token_embedding,
-        scale_factor=0.2,
+        scale_factor=0.5,
         skip_last_layer=True,
     )
     config = TrainingConfig(
@@ -360,8 +317,6 @@ def control(model: ModelWrapper):
 
 
 if __name__ == "__main__":
-    # embedding_color()
-    # embedding_color_train_5_to_10()
-    steer_5_train_10_through_15()
+    embedding_color()
     resid_color()
     control()

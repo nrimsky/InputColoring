@@ -84,90 +84,43 @@ def register_hook_to_add_and_proj_to_token_repr(
     proj_vector: torch.Tensor | None,
     scale_factor: float | None = None,
 ):
-    """
-    Registers a forward hook on `module` that:
-    1. Subtracts the existing component of activations in the direction of `vector`.
-    2. (Optionally) scales `vector` to have norm = scale_factor * token_activation_norm.
-    3. Adds that scaled vector back in.
-    4. (Optionally) projects out any component along `proj_vector`.
-    The operations above only happen at positions where mask=1 (the mask is read from
-    `module.data_ref.<mask_attr>`).
-    """
-
+    
     def hook_fn(module, input, output):
-        # 1) Get the main activations from output
         if isinstance(output, tuple):
-            acts = output[0]
-            other = output[1:]
+            acts, *other = output
         else:
-            acts = output
-            other = ()
+            acts, other = output, ()
 
-        # Retrieve the mask from module.data_ref
+        # Retrieve mask
         data_ref = module.data_ref
         mask = getattr(data_ref, mask_attr).unsqueeze(-1)  # (B, S, 1)
 
-        # ------------------------------------------------------------------
-        # 1) Subtract out any existing component along the first `vector`
-        # ------------------------------------------------------------------
-        # "Existing component" in direction of vector is:
-        #    ( (acts · v) / (v · v) ) * v
-        # We'll broadcast properly across batch and seq.
-        v_norm_sq = torch.sum(vector * vector)  # scalar
-        alpha = torch.einsum("bsd,d->bs", acts.detach(), vector)  # (B, S)
-        alpha = alpha / v_norm_sq  # scalar factor per token
-        alpha = alpha.unsqueeze(-1)  # (B, S, 1)
-
-        # Remove it only where mask=1
-        # acts -= (mask * alpha * vector)
+        # Subtract existing component along vector
+        alpha = torch.einsum("bsd,d->bs", acts, vector).unsqueeze(-1)
         acts = acts - mask * alpha * vector.view(1, 1, -1)
 
-        # ------------------------------------------------------------------
-        # 2) Scale `vector` to have norm = scale_factor * current token norm,
-        #    if `scale_factor` is set
-        # ------------------------------------------------------------------
+        # Scale factor
         if scale_factor is not None:
-            # Norm of the updated acts per token (after removal)
-            act_norms = torch.norm(
-                acts.detach(), p=2, dim=-1, keepdim=True
-            )  # (B, S, 1)
-
-            v_norm = torch.norm(vector, p=2)  # scalar
-            # scaled_vector = (scale_factor * act_norms / v_norm) * vector
-            scaled_vector = (scale_factor * act_norms / (v_norm + 1e-9)) * vector.view(
-                1, 1, -1
-            )
+            act_norms = torch.norm(acts, p=2, dim=-1, keepdim=True)
+            scaled_vector = (scale_factor * act_norms) * vector.view(1, 1, -1)
         else:
-            # No scaling
             scaled_vector = vector.view(1, 1, -1)
 
-        # ------------------------------------------------------------------
-        # 3) Add that scaled vector back in (where mask=1)
-        # ------------------------------------------------------------------
+        # Add scaled vector back
         acts = acts + mask * scaled_vector
 
-        # ------------------------------------------------------------------
-        # 4) Optionally project out any component along `proj_vector`
-        # ------------------------------------------------------------------
+        # Project out proj_vector
         if proj_vector is not None:
-            # Compute the projection of acts onto proj_vector
-            pv_norm_sq = torch.sum(proj_vector * proj_vector)  # scalar
-            beta = torch.einsum("bsd,d->bs", acts.detach(), proj_vector)  # (B, S)
-            beta = beta / pv_norm_sq  # scalar factor
-            beta = beta.unsqueeze(-1)  # (B, S, 1)
-
-            # Subtract it only at mask=1
+            beta = torch.einsum("bsd,d->bs", acts, proj_vector).unsqueeze(-1)
             acts = acts - mask * beta * proj_vector.view(1, 1, -1)
 
-        # Return the updated activation in the correct structure
         if len(other) > 0:
             return (acts, *other)
         else:
             return acts
 
-    # Register the forward hook and return its handle so it can be removed if needed.
-    handle = module.register_forward_hook(hook_fn)
-    return handle
+    return module.register_forward_hook(hook_fn)
+
 
 
 def main_hook_fn(module, inputs):
@@ -246,6 +199,11 @@ class ModelWrapper(torch.nn.Module):
 
         user_vector = settings.user_vector.to(self.device).to(torch.bfloat16)
         assistant_vector = settings.assistant_vector.to(self.device).to(torch.bfloat16)
+
+        if settings.scale_factor is not None:
+            # normalize vectors once to avoid repeated normalization in the hook
+            user_vector /= torch.norm(user_vector, p=2)
+            assistant_vector /= torch.norm(assistant_vector, p=2)
 
         # set up hooks based on intervention type
         if settings.intervention == Intervention.EMBEDDING_COLOR:
@@ -431,7 +389,9 @@ class ModelWrapper(torch.nn.Module):
         )
 
     def cleanup(self):
-        """Clean up resources and free memory"""
+        """
+        Clean up resources and free memory
+        """
         self.reset_hooks()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -446,5 +406,7 @@ class ModelWrapper(torch.nn.Module):
             torch.cuda.empty_cache()
 
     def __del__(self):
-        """Destructor to ensure cleanup"""
+        """
+        Destructor to ensure cleanup
+        """
         self.cleanup()

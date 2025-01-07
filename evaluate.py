@@ -128,12 +128,6 @@ def run_all_models():
         model_names = [m.split("/")[-1] for m in model_names]
         plot_nlls(nll_paths, model_names, eval_name, title = eval_name)
 
-def run_inference_time_eval(model_paths):
-    for model_path in model_paths:
-        get_all_dataset_nlls_for_model(model_path, inference_only=True)
-        print("Finished inference only evals for", model_path)
-
-
 
 if __name__ == "__main__":
     run_all_models()
