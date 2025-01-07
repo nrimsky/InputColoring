@@ -17,6 +17,7 @@ class TrainingConfig:
     train_files: list[str]
     val_files: list[str]
     intervention_settings: InterventionSettings | None
+    save_dir: str
     learning_rate: float = 1e-5
     num_epochs: int = 1
     use_lora: bool = False
@@ -25,7 +26,7 @@ class TrainingConfig:
     lora_dropout: float = 0.1
     validation_samples: int = 30
     val_check_interval: float = 0.2
-    dir_name: str = "saved_models"
+    trainable_layers: list[int] | None = None
 
     def to_dict(self):
         return {
@@ -44,6 +45,8 @@ class TrainingConfig:
             "lora_dropout": self.lora_dropout,
             "validation_samples": self.validation_samples,
             "val_check_interval": self.val_check_interval,
+            "save_dir": self.save_dir,
+            "trainable_layers": self.trainable_layers,
         }
 
 
@@ -65,6 +68,16 @@ class ConversationDataset(Dataset):
             "tokens": torch.tensor(example["tokens"]),
             "assistant_mask": torch.tensor(example["assistant_mask"]),
         }
+
+
+def freeze_layers(model, trainable_layers: list[int]):
+    # First freeze everything
+    for param in model.parameters():
+        param.requires_grad = False
+    # Then unfreeze the specified layers
+    for layer_idx in trainable_layers:
+        for param in model.model.layers[layer_idx].parameters():
+            param.requires_grad = True
 
 
 def compute_masked_loss(
@@ -119,44 +132,60 @@ def evaluate_model(
     return results
 
 
-def print_and_log(string, filename):
+def print_and_log(string, fh):
     print(string)
-    with open(filename, "a") as f:
-        f.write(string + "\n")
+    fh.write(string + "\n")
 
 
 def train_model(model: ModelWrapper, config: TrainingConfig):
-    save_dir = f"{config.dir_name}/{str(config.intervention_settings)}"
-    logfile = f"{save_dir}/training_log.txt"
-    os.makedirs(save_dir, exist_ok=True)
-    # delete log file if it already exists
+    logfile = f"{config.save_dir}/training_log.txt"
+    os.makedirs(config.save_dir, exist_ok=True)
+    # Clear log file if it already exists
     if os.path.exists(logfile):
         os.remove(logfile)
-    # save config
-    with open(f"{save_dir}/training_config.json", "w") as f:
+    # Save training config
+    with open(f"{config.save_dir}/training_config.json", "w") as f:
         json.dump(config.to_dict(), f)
     train_dataset = ConversationDataset(config.train_files)
     print(f"Training on {len(train_dataset)} samples")
 
+    logfilehandle = open(logfile, "w")
+
     if config.use_lora:
+        target_modules = []
+        if config.trainable_layers is not None:
+            for layer_idx in config.trainable_layers:
+                target_modules.extend(
+                    [
+                        f"model.layers.{layer_idx}.self_attn.q_proj",
+                        f"model.layers.{layer_idx}.self_attn.v_proj",
+                    ]
+                )
+        else:
+            target_modules = ["q_proj", "v_proj"]  # Default behavior
+
         peft_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
             r=config.lora_r,
             lora_alpha=config.lora_alpha,
             lora_dropout=config.lora_dropout,
             bias="none",
-            target_modules=["q_proj", "v_proj"],
+            target_modules=target_modules,
         )
         model.model = get_peft_model(model.model, peft_config)
         model.model.print_trainable_parameters()
+    else:
+        # For full finetuning, freeze/unfreeze specified layers
+        if config.trainable_layers is not None:
+            freeze_layers(model, config.trainable_layers)
 
     # get validation stats before intervention + training
     val_results = evaluate_model(model, config.val_files, config.validation_samples)
     print_and_log(
-        "Validation results before training and without intervention:", logfile
+        "Validation results before training and without intervention:", logfilehandle
     )
     for file_name, val_loss in val_results.items():
-        print_and_log(f"{file_name}: {val_loss:.4f}", logfile)
+        print_and_log(f"{file_name}: {val_loss:.4f}", logfilehandle)
 
     # attach intervention hooks
     if config.intervention_settings is not None:
@@ -164,9 +193,11 @@ def train_model(model: ModelWrapper, config: TrainingConfig):
 
     # get validation stats after intervention + before training
     val_results = evaluate_model(model, config.val_files, config.validation_samples)
-    print_and_log("Validation results before training but with intervention:", logfile)
+    print_and_log(
+        "Validation results before training but with intervention:", logfilehandle
+    )
     for file_name, val_loss in val_results.items():
-        print_and_log(f"{file_name}: {val_loss:.4f}", logfile)
+        print_and_log(f"{file_name}: {val_loss:.4f}", logfilehandle)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
 
@@ -179,7 +210,7 @@ def train_model(model: ModelWrapper, config: TrainingConfig):
     model.train()
 
     for epoch in range(config.num_epochs):
-        print_and_log(f"\nEpoch {epoch + 1}/{config.num_epochs}", logfile)
+        print_and_log(f"\nEpoch {epoch + 1}/{config.num_epochs}", logfilehandle)
         progress_bar = tqdm(train_dataset, desc=f"Epoch {epoch + 1}")
         for row in progress_bar:
             tokens = row["tokens"].to(model.device)
@@ -200,55 +231,137 @@ def train_model(model: ModelWrapper, config: TrainingConfig):
                     model, config.val_files, config.validation_samples
                 )
                 print_and_log(
-                    f"Avg train loss over last {n} steps: {train_loss/n:.4f}", logfile
+                    f"Avg train loss over last {n} steps: {train_loss/n:.4f}",
+                    logfilehandle,
                 )
-                print_and_log("Validation results:", logfile)
+                print_and_log("Validation results:", logfilehandle)
                 for file_name, val_loss in val_results.items():
-                    print_and_log(f"{file_name}: {val_loss:.4f}", logfile)
+                    print_and_log(f"{file_name}: {val_loss:.4f}", logfilehandle)
                 train_loss = 0.0
                 n = 0
 
+    logfilehandle.close()
+
     if config.use_lora:
-        model.model.save_pretrained(save_dir)
+        model.model.save_pretrained(config.save_dir)
     else:
-        torch.save(model.model.state_dict(), f"{save_dir}/pytorch_model.bin")
+        torch.save(model.model.state_dict(), f"{config.save_dir}/pytorch_model.bin")
 
 
-def exp():
-    model = ModelWrapper()
-    user_token_embedding = model.user_token_embedding.clone()
-    assistant_token_embedding = model.assistant_token_embedding.clone()
-    interventions = [
-        InterventionSettings(
-            intervention=Intervention.EMBEDDING_COLOR,
-            user_vector=user_token_embedding,
-            assistant_vector=assistant_token_embedding,
-            norm_factor=0.8,
-        ),
-        InterventionSettings(
-            intervention=Intervention.RESID_ADD_PROJECT,
-            user_vector=user_token_embedding,
-            assistant_vector=assistant_token_embedding,
-            norm_factor=0.15,
-            skip_last_layer=True,
-        ),
-        None,
-    ]
-    for i, intervention in enumerate(interventions):
-        if i > 0:
+def model_wrapper_fn(fn):
+    def wrapper():
+        model = None
+        try:
+            model = ModelWrapper()
+            fn(model)
+        finally:
             del model
             gc.collect()
-            torch.cuda.empty_cache()
-        model = ModelWrapper()
-        config = TrainingConfig(
-            train_files=glob("processed_data/train/*.json"),
-            val_files=glob("processed_data/test/*.json"),
-            intervention_settings=intervention,
-            use_lora=True,
-            dir_name="saved_models",
-        )
-        train_model(model, config)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    return wrapper
+
+
+@model_wrapper_fn
+def embedding_color(model: ModelWrapper):
+    user_token_embedding = model.user_token_embedding.clone()
+    assistant_token_embedding = model.assistant_token_embedding.clone()
+    intervention = InterventionSettings(
+        intervention=Intervention.EMBEDDING_COLOR,
+        user_vector=user_token_embedding,
+        assistant_vector=assistant_token_embedding,
+        scale_factor=0.8,
+    )
+    config = TrainingConfig(
+        train_files=glob("processed_data/train/*.json"),
+        val_files=glob("processed_data/test/*.json"),
+        intervention_settings=intervention,
+        use_lora=True,
+        save_dir="saved_models/embedding_color",
+    )
+    train_model(model, config)
+
+
+@model_wrapper_fn
+def embedding_color_train_5_to_10(model: ModelWrapper):
+    user_token_embedding = model.user_token_embedding.clone()
+    assistant_token_embedding = model.assistant_token_embedding.clone()
+    intervention = InterventionSettings(
+        intervention=Intervention.EMBEDDING_COLOR,
+        user_vector=user_token_embedding,
+        assistant_vector=assistant_token_embedding,
+        scale_factor=0.8,
+    )
+    config = TrainingConfig(
+        train_files=glob("processed_data/train/*.json"),
+        val_files=glob("processed_data/test/*.json"),
+        intervention_settings=intervention,
+        use_lora=True,
+        save_dir="saved_models/embedding_color_train_5_to_10",
+        trainable_layers=list(range(5, 10)),
+    )
+    train_model(model, config)
+
+
+@model_wrapper_fn
+def steer_5_train_10_through_15(model: ModelWrapper):
+    user_token_embedding = model.user_token_embedding.clone()
+    assistant_token_embedding = model.assistant_token_embedding.clone()
+    intervention = InterventionSettings(
+        intervention=Intervention.STEER_AT_LAYER,
+        user_vector=user_token_embedding,
+        assistant_vector=assistant_token_embedding,
+        scale_factor=0.5,
+        layer=5,
+    )
+    config = TrainingConfig(
+        train_files=glob("processed_data/train/*.json"),
+        val_files=glob("processed_data/test/*.json"),
+        intervention_settings=intervention,
+        use_lora=True,
+        save_dir="saved_models/steer_5_train_10_through_15",
+        trainable_layers=list(range(10, 15)),
+    )
+    train_model(model, config)
+
+
+@model_wrapper_fn
+def resid_color(model: ModelWrapper):
+    user_token_embedding = model.user_token_embedding.clone()
+    assistant_token_embedding = model.assistant_token_embedding.clone()
+    intervention = InterventionSettings(
+        intervention=Intervention.RESID_ADD_PROJECT,
+        user_vector=user_token_embedding,
+        assistant_vector=assistant_token_embedding,
+        scale_factor=0.2,
+        skip_last_layer=True,
+    )
+    config = TrainingConfig(
+        train_files=glob("processed_data/train/*.json"),
+        val_files=glob("processed_data/test/*.json"),
+        intervention_settings=intervention,
+        use_lora=True,
+        save_dir="saved_models/resid_color",
+    )
+    train_model(model, config)
+
+
+@model_wrapper_fn
+def control(model: ModelWrapper):
+    config = TrainingConfig(
+        train_files=glob("processed_data/train/*.json"),
+        val_files=glob("processed_data/test/*.json"),
+        intervention_settings=None,
+        use_lora=True,
+        save_dir="saved_models/control",
+    )
+    train_model(model, config)
 
 
 if __name__ == "__main__":
-    exp()
+    embedding_color()
+    embedding_color_train_5_to_10()
+    steer_5_train_10_through_15()
+    resid_color()
+    control()
