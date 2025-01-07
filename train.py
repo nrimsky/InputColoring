@@ -360,8 +360,8 @@ def control(model: ModelWrapper):
 
 
 if __name__ == "__main__":
-    embedding_color()
-    embedding_color_train_5_to_10()
+    # embedding_color()
+    # embedding_color_train_5_to_10()
     steer_5_train_10_through_15()
     resid_color()
     control()
